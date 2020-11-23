@@ -1,5 +1,6 @@
 package calculator;
 
+import java.math.BigInteger;
 import java.util.*;
 import java.util.regex.Pattern;
 
@@ -8,7 +9,7 @@ import java.util.regex.Pattern;
  * it has three methods
  * variables consist only of english letters */
 public class Variables {
-    private final Map<String, Integer> variables = new HashMap<>();
+    private final Map<String, BigInteger> variables = new HashMap<>();
 
     void operationAssignment(String line) {
         String[] arguments = getRidOfExtraPMS(line).replaceAll("\\s+", "").split("=");
@@ -21,11 +22,11 @@ public class Variables {
             System.out.println("Invalid assignment");
         }
         if (arguments[1].matches("-?[\\d]+")) {
-            variables.put(arguments[0], Integer.parseInt(arguments[1]));
+            variables.put(arguments[0], new BigInteger((arguments[1])));
         } else if (arguments[1].matches("(?i)-?[a-z]+")) {
             String temp = arguments[1].charAt(0) == '-' ? arguments[1].substring(1) : arguments[1];
             if (variables.get(temp) != null) {
-                variables.put(arguments[0], arguments[1].charAt(0) == '-' ? variables.get(temp) * -1 : variables.get(temp));
+                variables.put(arguments[0], arguments[1].charAt(0) == '-' ? variables.get(temp).negate() : variables.get(temp));
             } else {
                 System.out.println("Unknown variable");
             }
@@ -64,7 +65,7 @@ public class Variables {
             System.out.println("Invalid expression");
             return;
         }
-        Integer result = calcString(lineWithoutSpacesAndOtherGarbage);
+        BigInteger result = calcString(lineWithoutSpacesAndOtherGarbage);
         System.out.println(result == null ? "Smth bad is happened" : result);
     }
 
@@ -77,18 +78,18 @@ public class Variables {
     }
 
     // this video helped me a lot https://www.youtube.com/watch?v=Vk-tGND2bfc
-    private Integer calcString(String line) {
+    private BigInteger calcString(String line) {
         Pattern number = Pattern.compile("\\d+");
         Pattern variable = Pattern.compile("(?i)[a-z]+");
         Pattern operations = Pattern.compile("[-*+/!^]");
         Deque<String> stackOperations = new ArrayDeque<>();
-        Deque<Integer> stackOperands = new ArrayDeque<>();
+        Deque<BigInteger> stackOperands = new ArrayDeque<>();
         Queue<String> tokens = getQueueTokens(line);
 //        process every token in tokens
         while (!tokens.isEmpty()) {
             String token = tokens.poll();
             if (number.matcher(token).matches()) {
-                stackOperands.offerLast(Integer.parseInt(token));
+                stackOperands.offerLast(new BigInteger(token));
             } else if (variable.matcher(token).matches()) {
                 if (variables.get(token) != null) {
                     stackOperands.offerLast(variables.get(token));
@@ -140,21 +141,21 @@ public class Variables {
     }
 
     // takes one or two numbers from stack and make an operation
-    private boolean calcStacks(String operation, Deque<Integer> numbers) {
-        Integer firstNumber = numbers.pollLast();
+    private boolean calcStacks(String operation, Deque<BigInteger> numbers) {
+        BigInteger firstNumber = numbers.pollLast();
         if (firstNumber == null) {
             System.out.println("First number is null");
             return false;
         }
         if (Objects.equals("!", operation)) {
-            numbers.offerLast(-firstNumber);
+            numbers.offerLast(firstNumber.negate());
         } else {
-            Integer secondNumber = numbers.pollLast();
+            BigInteger secondNumber = numbers.pollLast();
             if (secondNumber == null) {
                 System.out.println("Second number is null");
                 return false;
             }
-            Integer result = useOperator(operation, secondNumber, firstNumber);
+            BigInteger result = useOperator(operation, secondNumber, firstNumber);
             if (result == null) {
                 return false;
             } else {
@@ -164,18 +165,22 @@ public class Variables {
         return true;
     }
 
-    private Integer useOperator(String operator, int value1, int value2) {
+    private BigInteger useOperator(String operator, BigInteger value1, BigInteger value2) {
         switch (operator) {
             case "+":
-                return value1 + value2;
+                return value1.add(value2);
             case "-":
-                return value1 - value2;
+                return value1.subtract(value2);
             case "/":
-                return value1 / value2;
+                return value1.divide(value2);
             case "*":
-                return value1 * value2;
+                return value1.multiply(value2);
             case "^":
-                return (int) Math.pow(value1, value2);
+                BigInteger result = BigInteger.ONE;
+                for (BigInteger i = BigInteger.ZERO; i.compareTo(value2) < 0; i = i.add(BigInteger.ONE)) {
+                    result = result.multiply(value1);
+                }
+                return result;
         }
         return null;
     }
