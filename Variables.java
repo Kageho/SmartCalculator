@@ -1,16 +1,17 @@
 package calculator;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
+import java.util.regex.Pattern;
+
 /*
-* This class provide variables
-* it has three methods
-* variables consist only of english letters */
+ * This class provides variables
+ * it has three methods
+ * variables consist only of english letters */
 public class Variables {
     private final Map<String, Integer> variables = new HashMap<>();
 
-    public void operationAssignment(String line) {
-        String[] arguments = AddAndSub.getRidOfExtraPMS(line).replaceAll("\\s+", "").split("=");
+    void operationAssignment(String line) {
+        String[] arguments = getRidOfExtraPMS(line).replaceAll("\\s+", "").split("=");
         if (arguments.length != 2) {
             System.out.println("Invalid assignment");
         }
@@ -31,7 +32,7 @@ public class Variables {
         }
     }
 
-    public void showValue(String line) {
+    void showValue(String line) {
         if (variables.get(line) != null) {
             System.out.println(variables.get(line));
         } else {
@@ -39,26 +40,177 @@ public class Variables {
         }
     }
 
-    public void calculate(String line) {
-        String[] arguments = AddAndSub.getRidOfExtraPMS(line).split("\\s+");
-        int sum = 0;
-        for (var i : arguments) {
-            if (i.matches("[+-]?\\d+")) {
-                sum += Integer.parseInt(i.charAt(0) == '+' ? i.substring(1) : i);
-                continue;
-            } else if (i.matches("(?i)[+-]?[a-z]+")) {
-                String temp = i.charAt(0) == '+' || i.charAt(0) == '-' ? i.substring(1) : i;
-                boolean isMinus = i.charAt(0) == '-';
-                if (!variables.containsKey(temp)) {
-                    System.out.println("Unknown variable");
-                    return;
-                }
-                sum += isMinus ? -1 * variables.get(temp) : variables.get(temp);
-                continue;
-            }
-            System.out.println("Smth is went wrong");
+    void checkAndCalc(String line) {
+        String lineWithoutSpacesAndOtherGarbage = getRidOfExtraPMS(line);
+        if (lineWithoutSpacesAndOtherGarbage.matches(".*(/ *[/*^]|\\* *[/*^]|[-+] *[*/^]|[*/^] *\\+|\\^ *[-+/*^]).*|.*[-+/*^]$") || lineWithoutSpacesAndOtherGarbage.matches("(?i).*(\\d+[^\\d\\s+-/*()^]+|[a-z]+[^\\s+-/*()a-z^]+).*")) {
+            System.out.println("Invalid expression");
             return;
         }
-        System.out.println(sum);
+//        below I use stack for check an input line for balanced brackets
+        Deque<Character> stack = new ArrayDeque<>();
+        boolean isBalanced = true;
+        for (var i : lineWithoutSpacesAndOtherGarbage.toCharArray()) {
+            if (i == '(') {
+                stack.offerLast(i);
+            } else if (i == ')') {
+                if (stack.isEmpty()) {
+                    isBalanced = false;
+                    break;
+                }
+                stack.pop();
+            }
+        }
+        if (!isBalanced || !stack.isEmpty()) {
+            System.out.println("Invalid expression");
+            return;
+        }
+        Integer result = calcString(lineWithoutSpacesAndOtherGarbage);
+        System.out.println(result == null ? "Smth bad is happened" : result);
+    }
+
+    // replace unary minus to !, it cleans string of extra operations
+    private String getRidOfExtraPMS(String line) {
+        while (line.matches(".*(\\+ *\\+|- *-|\\+ *-|- *\\+).*")) {
+            line = line.replaceAll("(\\+ *\\+)|(- *-)", "+").replaceAll("\\+ *-|- *\\+", "-");
+        }
+        return line.replaceAll("\\s+", "").replaceAll("\\*-", "\\*!").replaceAll("/-", "/!").replaceAll("\\( *-", "\\(!");
+    }
+
+    // this video helped me a lot https://www.youtube.com/watch?v=Vk-tGND2bfc
+    private Integer calcString(String line) {
+        Pattern number = Pattern.compile("\\d+");
+        Pattern variable = Pattern.compile("(?i)[a-z]+");
+        Pattern operations = Pattern.compile("[-*+/!^]");
+        Deque<String> stackOperations = new ArrayDeque<>();
+        Deque<Integer> stackOperands = new ArrayDeque<>();
+        Queue<String> tokens = getQueueTokens(line);
+//        process every token in tokens
+        while (!tokens.isEmpty()) {
+            String token = tokens.poll();
+            if (number.matcher(token).matches()) {
+                stackOperands.offerLast(Integer.parseInt(token));
+            } else if (variable.matcher(token).matches()) {
+                if (variables.get(token) != null) {
+                    stackOperands.offerLast(variables.get(token));
+                } else {
+                    System.out.println("unknown variable\nexecution is failed");
+                    return null;
+                }
+//                below it works with signs
+            } else if (operations.matcher(token).matches()) {
+                if (stackOperations.isEmpty()) {
+                    stackOperations.offerLast(token);
+                } else {
+                    if (getPriority(token) > getPriority(stackOperations.peekLast()) || Objects.equals(stackOperations.peekLast(), "(")) {
+                        stackOperations.offerLast(token);
+                    } else {
+                        while (getPriority(token) <= getPriority(stackOperations.peekLast()) && !Objects.equals(stackOperations.peekLast(), "(")) {
+                            String currentOperation = stackOperations.pollLast();
+                            if (!calcStacks(currentOperation, stackOperands)) {
+                                System.out.println("current operation is " + currentOperation);
+                                System.out.println("Can't make operations with tokens with different priority");
+                                return null;
+                            }
+                            if (stackOperations.isEmpty()) {
+                                break;
+                            }
+                        }
+                        stackOperations.offerLast(token);
+                    }
+                }
+//                deal with brackets
+            } else if (Objects.equals("(", token)) {
+                stackOperations.offerLast(token);
+            } else if (Objects.equals(")", token)) {
+                while (!Objects.equals(stackOperations.peekLast(), "(")) {
+                    String operation = stackOperations.pollLast();
+                    calcStacks(operation, stackOperands);
+                }
+                stackOperations.pollLast();
+            } else {
+                System.out.println("Unknown token, exit");
+                return null;
+            }
+        }
+//        calc the rest numbers
+        while (stackOperands.size() != 1) {
+            calcStacks(stackOperations.pollLast(), stackOperands);
+        }
+        return stackOperands.pollLast();
+    }
+
+    // takes one or two numbers from stack and make an operation
+    private boolean calcStacks(String operation, Deque<Integer> numbers) {
+        Integer firstNumber = numbers.pollLast();
+        if (firstNumber == null) {
+            System.out.println("First number is null");
+            return false;
+        }
+        if (Objects.equals("!", operation)) {
+            numbers.offerLast(-firstNumber);
+        } else {
+            Integer secondNumber = numbers.pollLast();
+            if (secondNumber == null) {
+                System.out.println("Second number is null");
+                return false;
+            }
+            Integer result = useOperator(operation, secondNumber, firstNumber);
+            if (result == null) {
+                return false;
+            } else {
+                numbers.offerLast(result);
+            }
+        }
+        return true;
+    }
+
+    private Integer useOperator(String operator, int value1, int value2) {
+        switch (operator) {
+            case "+":
+                return value1 + value2;
+            case "-":
+                return value1 - value2;
+            case "/":
+                return value1 / value2;
+            case "*":
+                return value1 * value2;
+            case "^":
+                return (int) Math.pow(value1, value2);
+        }
+        return null;
+    }
+
+    private int getPriority(String operator) {
+        if (Objects.equals("+", operator) || Objects.equals("-", operator)) {
+            return 1;
+        } else if (Objects.equals("/", operator) || Objects.equals("*", operator)) {
+            return 2;
+        } else if (Objects.equals("^", operator)) {
+            return 4;
+        }
+        return 5;
+    }
+
+    //returns tokens it is ether number/variable or sign
+    private Queue<String> getQueueTokens(String line) {
+        Deque<String> tokens = new ArrayDeque<>();
+        Set<Character> operations = new HashSet<>(Arrays.asList('+', '-', '/', '!', '*', '(', ')', '^'));
+        StringBuilder customString = new StringBuilder(line);
+//        plus sign just for exit from while cycle
+        customString.append('+');
+        while (customString.length() > 0) {
+            boolean isItNumber = false;
+            int index = 0;
+            char currentToken = customString.charAt(index);
+            while (!operations.contains(currentToken)) {
+                currentToken = customString.charAt(++index);
+                isItNumber = true;
+            }
+            tokens.offerLast(customString.substring(0, isItNumber ? index : index + 1));
+            customString = new StringBuilder(customString.substring(isItNumber ? index : index + 1));
+        }
+//       remove last + sign
+        tokens.pollLast();
+        return tokens;
     }
 }
